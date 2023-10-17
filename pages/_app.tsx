@@ -1,11 +1,28 @@
-import React from 'react'
-import { AppProps } from 'next/app'
+import React, { useEffect } from 'react'
+import App from 'next/app'
+import type { AppProps, AppContext } from 'next/app'
 import Head from 'next/head'
-import { ThemeProvider } from '@primer/components'
+import { ThemeProvider, ThemeProviderProps } from '@primer/react'
+import { SSRProvider } from '@react-aria/ssr'
+import { defaultComponentThemeProps, getThemeProps } from 'components/lib/getThemeProps'
 
-import '@primer/css/index.scss'
+import '../stylesheets/index.scss'
 
-const App: React.FC<AppProps> = ({ Component, pageProps }) => {
+import events from 'components/lib/events'
+import experiment from 'components/lib/experiment'
+import { LanguagesContext, LanguagesContextT } from 'components/context/LanguagesContext'
+
+type MyAppProps = AppProps & {
+  csrfToken: string
+  themeProps: typeof defaultComponentThemeProps & Pick<ThemeProviderProps, 'colorMode'>
+  languagesContext: LanguagesContextT
+}
+const MyApp = ({ Component, pageProps, csrfToken, themeProps, languagesContext }: MyAppProps) => {
+  useEffect(() => {
+    events()
+    experiment()
+  }, [])
+
   return (
     <>
       <Head>
@@ -13,8 +30,14 @@ const App: React.FC<AppProps> = ({ Component, pageProps }) => {
         <title>GitHub Documentation</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-        <link rel="alternate icon" type="image/png" href="/assets/images/site/favicon.png" />
-        <link rel="icon" type="image/svg+xml" href="/assets/images/site/favicon.svg" />
+        {/* The value in these "/cb-xxxxx" prefixes aren't important. They
+            just need to be present. They help the CDN cache the asset
+            for infinity.
+            Just remember, if you edit these images on disk, remember to
+            change these numbers
+         */}
+        <link rel="alternate icon" type="image/png" href="/assets/cb-600/images/site/favicon.png" />
+        <link rel="icon" type="image/svg+xml" href="/assets/cb-803/images/site/favicon.svg" />
 
         <meta
           name="google-site-verification"
@@ -25,13 +48,36 @@ const App: React.FC<AppProps> = ({ Component, pageProps }) => {
           content="c1kuD-K2HIVF635lypcsWPoD4kilo5-jA_wBFyT4uMY"
         />
 
-        <meta name="csrf-token" content="$CSRFTOKEN$" />
+        <meta name="csrf-token" content={csrfToken} />
       </Head>
-      <ThemeProvider>
-        <Component {...pageProps} />
-      </ThemeProvider>
+      <SSRProvider>
+        <ThemeProvider
+          colorMode={themeProps.colorMode}
+          dayScheme={themeProps.dayTheme}
+          nightScheme={themeProps.nightTheme}
+          preventSSRMismatch
+        >
+          <LanguagesContext.Provider value={languagesContext}>
+            <Component {...pageProps} />
+          </LanguagesContext.Provider>
+        </ThemeProvider>
+      </SSRProvider>
     </>
   )
 }
 
-export default App
+MyApp.getInitialProps = async (appContext: AppContext) => {
+  const { ctx } = appContext
+  // calls page's `getInitialProps` and fills `appProps.pageProps`
+  const appProps = await App.getInitialProps(appContext)
+  const req: any = ctx.req
+
+  return {
+    ...appProps,
+    themeProps: getThemeProps(req),
+    csrfToken: req?.csrfToken?.() || '',
+    languagesContext: { languages: req.context.languages },
+  }
+}
+
+export default MyApp
